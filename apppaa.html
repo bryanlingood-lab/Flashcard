@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>Flashcards (JSON 輸入乾淨顯示)</title>
+<style>
+  body { font-family:-apple-system,system-ui,sans-serif; background:#0f1115; color:#eee; margin:0; padding:20px; }
+  h1 { margin-bottom:10px }
+  textarea, input, select, button {
+    padding:8px 12px; border-radius:8px; border:1px solid #3a3f5a;
+    background:#1b1e2b; color:#eee;
+  }
+  textarea { width:100%; max-width:900px }
+  .card { background:#1e2130; padding:18px; border-radius:12px; margin:12px 0; text-align:center; }
+  .prompt { font-size:24px; margin:10px 0; }
+  .choices button { display:block; margin:6px auto; width:80%; }
+  .answer { margin-top:10px; font-size:18px; color:#85b6ff; min-height:1.2em }
+</style>
+</head>
+<body>
+
+<h1>多模式單字練習（JSON 輸入）</h1>
+<p>輸入 JSON 陣列，例如：</p>
+<pre>[
+  {"prompt":"milk","answer":"mleko","lang":"pl-PL"},
+  {"prompt":"water","answer":"woda","lang":"pl-PL"}
+]</pre>
+
+<textarea id="dataInput" rows="8"></textarea><br>
+<button id="loadBtn">載入清單</button>
+<select id="groupSelect"></select>
+
+<!-- Flashcard -->
+<h2>Flashcard 模式</h2>
+<div class="card">
+  <div class="prompt" id="fcPrompt">請載入單字表</div>
+  <button onclick="showFlashAnswer()">顯示答案</button>
+  <div class="answer" id="fcAnswer"></div>
+</div>
+
+<!-- Typing -->
+<h2>Typing 模式</h2>
+<div class="card">
+  <div class="prompt" id="tpPrompt">請載入單字表</div>
+  <input id="tpInput" placeholder="輸入答案...">
+  <button onclick="checkTyping()">送出</button>
+  <div class="answer" id="tpFeedback"></div>
+</div>
+
+<!-- Multiple Choice -->
+<h2>Multiple Choice 模式</h2>
+<div class="card">
+  <div class="prompt" id="mcPrompt">請載入單字表</div>
+  <div class="choices" id="mcChoices"></div>
+  <div class="answer" id="mcFeedback"></div>
+</div>
+
+<script>
+let allWords = [], words = [];
+let fcIndex = 0, tpIndex = 0, mcIndex = 0;
+
+/* ====== 載入 JSON 單字表 ====== */
+document.getElementById("loadBtn").onclick = () => {
+  try {
+    allWords = parseJSON(document.getElementById("dataInput").value.trim());
+    setupGroups(allWords);
+  } catch(e) {
+    alert("⚠️ JSON 格式錯誤！");
+  }
+};
+
+function parseJSON(text){
+  const arr = JSON.parse(text);
+  return arr.map(x => ({
+    src: x.prompt,
+    dst: x.answer,
+    lang: x.lang || "en-US",
+    audio: x.audio || ""
+  }));
+}
+
+function setupGroups(list){
+  const groups=[], size=16;
+  for(let i=0;i<list.length;i+=size) groups.push(list.slice(i,i+size));
+  const sel=document.getElementById("groupSelect");
+  sel.innerHTML="";
+  const allOpt=document.createElement("option");
+  allOpt.value="all"; allOpt.textContent="全部 ("+list.length+" 單字)";
+  sel.appendChild(allOpt);
+  groups.forEach((g,idx)=>{
+    const opt=document.createElement("option");
+    opt.value=idx; opt.textContent="第 "+(idx+1)+" 組 ("+g.length+" 單字)";
+    sel.appendChild(opt);
+  });
+  sel.onchange=()=>{ words=(sel.value==="all")?list:groups[sel.value]; startPractice(); };
+  sel.value="all"; words=list; startPractice();
+}
+
+function startPractice(){ fcIndex=tpIndex=mcIndex=0; nextFlash(); nextTyping(); nextMC(); }
+
+/* ====== Flashcard (順序) ====== */
+function nextFlash(){
+  const w = words[fcIndex];
+  document.getElementById("fcPrompt").textContent = w.src; // ✅ 顯示乾淨文字
+  document.getElementById("fcAnswer").textContent = "";
+  fcIndex = (fcIndex + 1) % words.length;
+}
+function showFlashAnswer(){
+  const w = words[(fcIndex - 1 + words.length) % words.length];
+  document.getElementById("fcAnswer").textContent = w.dst; // ✅ 顯示乾淨答案
+  setTimeout(nextFlash,2000);
+}
+
+/* ====== Typing (順序) ====== */
+function nextTyping(){
+  const w = words[tpIndex];
+  document.getElementById("tpPrompt").textContent = w.src; // ✅ 題目純文字
+  document.getElementById("tpFeedback").textContent="";
+  document.getElementById("tpInput").value="";
+  tpIndex = (tpIndex + 1) % words.length;
+}
+function checkTyping(){
+  const w = words[(tpIndex - 1 + words.length) % words.length];
+  const val=document.getElementById("tpInput").value.trim();
+  document.getElementById("tpFeedback").textContent =
+    (val===w.dst) ? "✔ 正確" : "✘ 錯誤，答案："+w.dst;
+  setTimeout(nextTyping,2000);
+}
+
+/* ====== Multiple Choice (順序，選項隨機) ====== */
+function nextMC(){
+  const w = words[mcIndex];
+  document.getElementById("mcPrompt").textContent = w.src; // ✅ 題目純文字
+  const choices=[w.dst];
+  while(choices.length<4 && choices.length<words.length){
+    const c=words[Math.floor(Math.random()*words.length)].dst;
+    if(!choices.includes(c)) choices.push(c);
+  }
+  shuffle(choices);
+  const box=document.getElementById("mcChoices"); box.innerHTML="";
+  choices.forEach(c=>{
+    const btn=document.createElement("button");
+    btn.textContent=c; btn.onclick=()=>checkMC(c);
+    box.appendChild(btn);
+  });
+  document.getElementById("mcFeedback").textContent="";
+  mcIndex = (mcIndex + 1) % words.length;
+}
+function checkMC(ans){
+  const w = words[(mcIndex - 1 + words.length) % words.length];
+  document.getElementById("mcFeedback").textContent =
+    (ans===w.dst) ? "✔ 正確" : "✘ 錯誤，答案："+w.dst;
+  setTimeout(nextMC,2000);
+}
+
+/* ====== 工具 ====== */
+function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } }
+</script>
+</body>
+</html>
